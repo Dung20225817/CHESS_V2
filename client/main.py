@@ -326,14 +326,23 @@ class ChessApp:
     # 4. NETWORK & LOGIC
     # ==========================================
     def connect_and_auth(self, auth_type):
+        # 1. Lấy IP từ ô nhập liệu
+        ip_address = self.ent_ip.get() 
+        
         user = self.ent_user.get()
         pwd = self.ent_pass.get()
-        if not user or not pwd: return
+        
+        if not ip_address or not user or not pwd: 
+            messagebox.showwarning("Thiếu thông tin", "Vui lòng nhập IP, User và Pass")
+            return
+
         self.username = user
         if not self.net.cb_ref:
-            if self.net.connect("127.0.0.1", 6000, self.on_server_message) == 0:
-                messagebox.showerror("Lỗi", "Không kết nối được Server")
+            # 2. Truyền biến ip_address vào hàm connect thay vì chuỗi cứng
+            if self.net.connect(ip_address, 6000, self.on_server_message) == 0:
+                messagebox.showerror("Lỗi", f"Không kết nối được đến {ip_address}")
                 return
+        
         self.net.send({"type": auth_type, "username": user, "password": pwd})
 
     # --- SOCIAL ---

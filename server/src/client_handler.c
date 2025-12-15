@@ -347,8 +347,18 @@ void *client_thread(void *arg)
             continue;
         }
 
+        // --- XỬ LÝ GET_ROOMS (MỚI) ---
+        if (strstr(buf, "\"type\":\"GET_ROOMS\"") || strstr(buf, "\"type\": \"GET_ROOMS\""))
+        {
+            char response[4096]; // Buffer đủ lớn
+            get_room_list_json(response);
+
+            send(client, response, strlen(response), 0);
+            send(client, "\n", 1, 0);
+            continue;
+        }
+
         // --- Xử lý GAME JOIN ---
-        // (Logic cũ: Join room rồi mới chơi)
         if (strstr(buf, "\"type\":\"join\"") || strstr(buf, "\"type\": \"join\""))
         {
             char room_name[32] = {0};
@@ -363,17 +373,52 @@ void *client_thread(void *arg)
                 {
                     Room *room = &rooms[room_idx];
                     char player_color = assign_player(room, client);
+                    
+                    // [MỚI] 1. Cấu hình Timeout 60 giây cho Socket này
+                    struct timeval tv;
+                    tv.tv_sec = 60;  // 60 Giây timeout
+                    tv.tv_usec = 0;
+                    setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+
                     send_initial_state(client, room, player_color);
 
                     // Vào vòng lặp xử lý nước đi cho room này
-                    while ((n = recv(client, buf, BUF_SIZE - 1, 0)) > 0)
+                    while (1) 
                     {
+                        // [MỚI] 2. Nhận dữ liệu với kiểm tra lỗi kỹ càng hơn
+                        n = recv(client, buf, BUF_SIZE - 1, 0);
+                        
+                        if (n <= 0) {
+                            // --- XỬ LÝ KHI MẤT KẾT NỐI / TIMEOUT ---
+                            printf("[Server] Client disconnected or timed out (Room: %s)\n", room_name);
+                            
+                            pthread_mutex_lock(&cs);
+                            // Báo cho người còn lại biết
+                            char msg[] = "{\"type\":\"gameOver\",\"winner\":\"opponent_disconnect\",\"reason\":\"Mất kết nối\"}";
+                            broadcast_room(room, msg);
+                            
+                            // Reset phòng để người sau có thể chơi lại
+                            init_board(room->board, &room->turn);
+                            room->player_count = 0; // Xóa sạch người chơi trong phòng ảo
+                            pthread_mutex_unlock(&cs);
+                            
+                            break; // Thoát vòng lặp game
+                        }
+
                         buf[n] = '\0';
+                        
+                        // [Logic xử lý nước đi cũ giữ nguyên]
                         char from[3] = {0}, to[3] = {0};
                         char *p = strstr(buf, "\"move\":\"");
-                        if (!p)
-                            continue;
-                        p += 8;
+                        if (!p) continue; // Bỏ qua nếu tin nhắn rác
+                        
+                        p += 8; // (Điều chỉnh tùy theo format của bạn, ở đây +8 vì "move":" dài 8 ký tự, nhưng cẩn thận nếu JSON Python có dấu cách)
+                        // Nếu Python gửi "move": "..." (có dấu cách) thì p phải tìm khéo hơn.
+                        // Code cũ của bạn: strncpy(from, p, 2); ... 
+                        // Nếu logic cũ đang chạy tốt thì giữ nguyên đoạn parse này.
+                        
+                        // Để an toàn hơn với format JSON Python, bạn nên dùng logic parse linh hoạt hơn ở đây
+                        // Nhưng giả sử logic cũ ok, ta paste lại:
                         strncpy(from, p, 2);
                         strncpy(to, p + 2, 2);
 
@@ -381,17 +426,22 @@ void *client_thread(void *arg)
                         pthread_mutex_lock(&cs);
 
                         promotion_move(room, from, to);
+
+                        // Gửi thông báo nước đi (move_notify)
+                        char move_msg[128];
+                        const char *next_turn_str = (room->turn == 'w') ? "white" : "black";
+                        sprintf(move_msg, "{\"type\":\"move_notify\",\"move\":\"%s%s\",\"turn\":\"%s\"}", from, to, next_turn_str);
+                        broadcast_room(room, move_msg);
+
                         char result = check_game_over(room);
                         if (result)
                         {
                             char msg[128];
-                            // ... tạo msg game over ...
-                            if (result == 'w')
-                                sprintf(msg, "{\"type\":\"gameOver\",\"winner\":\"white\"}");
-                            else if (result == 'b')
-                                sprintf(msg, "{\"type\":\"gameOver\",\"winner\":\"black\"}");
-                            else
-                                sprintf(msg, "{\"type\":\"gameOver\",\"winner\":\"draw\"}");
+                            // ... tạo chuỗi msg ...
+                            if (result == 'w') sprintf(msg, "{\"type\":\"gameOver\",\"winner\":\"white\"}");
+                            else if (result == 'b') sprintf(msg, "{\"type\":\"gameOver\",\"winner\":\"black\"}");
+                            else sprintf(msg, "{\"type\":\"gameOver\",\"winner\":\"draw\"}");
+                            
                             broadcast_room(room, msg);
                             init_board(room->board, &room->turn);
                         }
@@ -402,13 +452,14 @@ void *client_thread(void *arg)
                             broadcast_room(room, json);
                         }
 
-                        // === UNLOCK MUTEX ===
                         pthread_mutex_unlock(&cs);
                     }
+                    
+                    // Ra khỏi vòng lặp -> Xóa player khỏi phòng
                     remove_player(room, client);
                 }
             }
-            break; // Thoát sau khi hết game loop
+            break; // Thoát thread
         }
     }
 

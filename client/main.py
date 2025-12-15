@@ -120,6 +120,10 @@ class ChessApp:
     # ==========================================
     # 2. HOMEPAGE (LOBBY)
     # ==========================================
+    # --- NETWORK REQUEST MỚI ---
+    def req_get_rooms(self):
+        self.net.send({"type": "GET_ROOMS"})
+
     def show_lobby(self):
         self.clear_container()
         
@@ -134,19 +138,30 @@ class ChessApp:
         content = tk.Frame(self.container)
         content.pack(fill="both", expand=True)
 
-        # >>> CỘT TRÁI: Vào phòng <<<
-        left_panel = tk.LabelFrame(content, text="🎮 Vào Phòng Chơi", font=("Arial", 12, "bold"), padx=15, pady=15)
+        # >>> CỘT TRÁI: DANH SÁCH PHÒNG (SỬA LẠI) <<<
+        left_panel = tk.LabelFrame(content, text="🎮 Danh Sách Phòng", font=("Arial", 12, "bold"), padx=10, pady=10)
         left_panel.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
-        tk.Label(left_panel, text="Nhập tên phòng hoặc ID:", font=("Arial", 11)).pack(pady=(10, 5), anchor="w")
-        self.ent_room = tk.Entry(left_panel, font=("Arial", 14))
-        self.ent_room.pack(fill="x", pady=5)
-        
-        tk.Button(left_panel, text="🚀 Vào Ngay", command=self.do_join_room_manual, 
-                  bg="#FF9800", fg="white", font=("Arial", 12, "bold"), pady=8).pack(fill="x", pady=15)
+        # 1. Khu vực nhập thủ công
+        manual_frame = tk.Frame(left_panel)
+        manual_frame.pack(fill="x", pady=(0, 10))
+        tk.Label(manual_frame, text="Tìm/Tạo:", font=("Arial", 10)).pack(side="left")
+        self.ent_room = tk.Entry(manual_frame, font=("Arial", 11), width=12)
+        self.ent_room.pack(side="left", padx=5)
+        tk.Button(manual_frame, text="Go", command=self.do_join_room_manual, 
+                  bg="#FF9800", fg="white", width=3).pack(side="left")
 
-        tk.Label(left_panel, text="💡 Hướng dẫn:\n- Tab 'Bạn Bè': Thách đấu người quen.\n- Tab 'Thách Đấu': Xem ai đang mời mình.\n- Tab 'Lời Mời': Kết bạn mới.", 
-                 justify="left", fg="gray", font=("Arial", 10)).pack(pady=20, anchor="w")
+        # 2. Toolbar (Nút làm mới)
+        room_toolbar = tk.Frame(left_panel)
+        room_toolbar.pack(fill="x")
+        tk.Label(room_toolbar, text="Phòng đang online:", fg="gray").pack(side="left")
+        tk.Button(room_toolbar, text="🔄", command=self.req_get_rooms, bd=1).pack(side="right")
+
+        # 3. Vùng hiển thị danh sách phòng (QUAN TRỌNG: Đây là cái bạn đang thiếu)
+        self.room_scroll_frame = self.create_scrollable_area(left_panel)
+
+        # [MỚI] Tự động cập nhật danh sách phòng mỗi 3 giây
+        # self.lobby_update_job = self.root.after(3000, self.loop_get_rooms)
 
         # >>> CỘT PHẢI: Hệ thống bạn bè (Tabs) <<<
         right_panel = tk.LabelFrame(content, text="🌐 Cộng Đồng", font=("Arial", 12, "bold"), padx=5, pady=5)
@@ -177,6 +192,36 @@ class ChessApp:
 
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_change)
         self.req_refresh_friends()
+        self.req_get_rooms() # <--- Gọi hàm lấy phòng ngay khi vào Lobby
+
+    # --- HÀM CẬP NHẬT GIAO DIỆN PHÒNG (MỚI) ---
+    def update_rooms_ui(self, rooms_data):
+        # Xóa danh sách cũ
+        for w in self.room_scroll_frame.winfo_children(): w.destroy()
+
+        if not rooms_data:
+            tk.Label(self.room_scroll_frame, text="Chưa có phòng nào.", fg="gray").pack(pady=10)
+            return
+
+        for r in rooms_data:
+            r_name = r.get("name")
+            r_count = r.get("count")
+            
+            # Tạo dòng hiển thị phòng
+            row = tk.Frame(self.room_scroll_frame, bg="white", pady=5, bd=1, relief="ridge")
+            row.pack(fill="x", padx=2, pady=2)
+            
+            # Icon trạng thái (Xanh = Trống, Đỏ = Đầy)
+            status_color = "green" if r_count < 2 else "red"
+            tk.Label(row, text="●", fg=status_color, bg="white").pack(side="left", padx=5)
+            
+            tk.Label(row, text=f"{r_name} ({r_count}/2)", bg="white", font=("Arial", 11, "bold")).pack(side="left")
+            
+            # Nút Join
+            state = "normal" if r_count < 2 else "disabled"
+            btn_text = "Vào" if r_count < 2 else "Full"
+            tk.Button(row, text=btn_text, state=state, bg="#2196F3", fg="white", font=("Arial", 9),
+                      command=lambda rn=r_name: self.do_join_specific_room(rn)).pack(side="right", padx=5)
 
     # --- UI TAB: BẠN BÈ ---
     def setup_friends_tab(self):
@@ -303,24 +348,58 @@ class ChessApp:
 
         self.clear_container()
         
-        info_panel = tk.Frame(self.container)
-        info_panel.pack(side="right", fill="y", padx=20)
+        # --- Cột bên phải (Thông tin & Log) ---
+        info_panel = tk.Frame(self.container, width=250)
+        info_panel.pack(side="right", fill="y", padx=10, pady=10)
+        info_panel.pack_propagate(False) # Giữ chiều rộng cố định
         
-        tk.Label(info_panel, text=f"Phòng: {room_name}", font=("Arial", 14, "bold")).pack(pady=10)
-        self.lbl_status = tk.Label(info_panel, text="Đang kết nối...", fg="#f57f17", font=("Arial", 12))
+        tk.Label(info_panel, text=f"Phòng: {room_name}", font=("Arial", 11, "bold")).pack(pady=(0, 10))
+        
+        self.lbl_status = tk.Label(info_panel, text="Đang kết nối...", fg="#f57f17", font=("Arial", 11))
         self.lbl_status.pack(pady=5)
-        self.lbl_me = tk.Label(info_panel, text="Bạn là: ...", font=("Arial", 11)) # Tạo biến
-        self.lbl_me.pack(pady=10) # Hiển thị lên
-        self.lbl_turn = tk.Label(info_panel, text="Lượt: Trắng", font=("Arial", 12, "bold"))
-        self.lbl_turn.pack(pady=5)
         
-        tk.Button(info_panel, text="🚪 Rời Phòng", command=self.do_leave_room, 
-                  bg="#f44336", fg="white").pack(side="bottom", pady=20)
+        self.lbl_me = tk.Label(info_panel, text="Bạn là: ...", font=("Arial", 11))
+        self.lbl_me.pack(pady=5)
+        
+        self.lbl_turn = tk.Label(info_panel, text="Lượt: Trắng", font=("Arial", 12, "bold"))
+        self.lbl_turn.pack(pady=(5, 10))
+        
+        # === [ĐOẠN CẦN THÊM MỚI] ===
+        tk.Label(info_panel, text="📜 Lịch sử đấu", font=("Arial", 10, "bold")).pack(anchor="w")
+        
+        log_frame = tk.Frame(info_panel, bg="white", bd=1, relief="sunken")
+        log_frame.pack(fill="both", expand=True, pady=(5, 20))
+        
+        # Widget Text để hiển thị log
+        self.log_text = tk.Text(log_frame, height=10, width=20, state="disabled", font=("Courier New", 10))
+        log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=log_scroll.set)
+        
+        self.log_text.pack(side="left", fill="both", expand=True)
+        log_scroll.pack(side="right", fill="y")
+        # ============================
 
+        tk.Button(info_panel, text="🚪 Rời Phòng", command=self.do_leave_room, 
+                  bg="#f44336", fg="white", font=("Arial", 10, "bold")).pack(side="bottom", fill="x")
+
+        # --- Cột bên trái (Bàn cờ) ---
         board_panel = tk.Frame(self.container)
-        board_panel.pack(side="left", expand=True)
-        self.board_gui = BoardGUI(board_panel, self.send_move)
+        board_panel.pack(side="left", expand=True, fill="both", padx=10, pady=10)
+        
+        board_center_frame = tk.Frame(board_panel)
+        board_center_frame.pack(expand=True)
+        self.board_gui = BoardGUI(board_center_frame, self.send_move)
         self.board_gui.pack()
+    
+    # --- [MỚI] HÀM HỖ TRỢ GHI LOG (Thêm hàm này vào class ChessApp) ---
+    def append_move_log(self, text):
+        """Thêm một dòng vào khung lịch sử nước đi"""
+        # Kiểm tra xem khung log có tồn tại không trước khi ghi
+        if hasattr(self, 'log_text') and self.log_text.winfo_exists():
+            self.log_text.config(state="normal")       # Mở khóa để ghi
+            self.log_text.insert(tk.END, text + "\n")  # Thêm nội dung
+            self.log_text.see(tk.END)                  # Tự động cuộn xuống
+            self.log_text.config(state="disabled")     # Khóa lại
 
     # ==========================================
     # 4. NETWORK & LOGIC
@@ -504,6 +583,11 @@ class ChessApp:
                 # Hoặc lỗi mạng
                 pass 
 
+        elif msg_type == "ROOM_LIST":
+            rooms = data.get("rooms", [])
+            if hasattr(self, 'room_scroll_frame'):
+                self.update_rooms_ui(rooms)
+
         # GAMEPLAY
         elif msg_type == "assignColor":
             self.player_color = data.get("color")
@@ -513,6 +597,21 @@ class ChessApp:
             if hasattr(self, 'board_gui'): self.board_gui.player_color = self.player_color
             if hasattr(self, 'lbl_status'): self.lbl_status.config(text="Đã vào game!", fg="green")
 
+        elif msg_type == "move_notify":
+            move_str = data.get("move")
+            next_turn = data.get("turn")
+            
+            # Logic hiển thị log
+            # Nếu lượt đi tiếp theo LÀ của mình -> Tức là đối thủ vừa đi
+            if next_turn == self.player_color:
+                self.append_move_log(f"Đối thủ: {move_str}")
+            
+            # Cập nhật lượt đi hiển thị (dự phòng nếu gói state đến chậm)
+            self.turn_color = next_turn
+            if hasattr(self, 'lbl_turn'):
+                t_txt = "⚪ Trắng" if next_turn == "white" else "⚫ Đen"
+                self.lbl_turn.config(text=f"Lượt: {t_txt}")
+    
         elif msg_type == "state":
             fen = data.get("fen")
             turn = data.get("turn")
@@ -527,7 +626,21 @@ class ChessApp:
 
         elif msg_type == "gameOver":
             winner = data.get("winner")
-            messagebox.showinfo("Kết thúc", f"Người thắng: {winner}")
+            
+            # [MỚI] Xử lý trường hợp đối thủ thoát
+            if winner == "opponent_disconnect":
+                reason = data.get("reason", "")
+                msg = f"Đối thủ đã thoát hoặc mất kết nối ({reason}). Bạn thắng!"
+                messagebox.showinfo("Kết thúc", msg)
+                self.append_move_log(f"--- {msg} ---")
+            else:
+                result_text = f"Kết thúc! Người thắng: {winner}"
+                messagebox.showinfo("Game Over", result_text)
+                self.append_move_log(f"--- {result_text} ---")
+            
+            # Reset trạng thái
+            if hasattr(self, 'lbl_status'):
+                self.lbl_status.config(text="Ván đấu kết thúc", fg="red")
 
     def on_close(self):
         self.is_polling_challenge = False

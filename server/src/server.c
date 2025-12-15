@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <signal.h>
 
 int server_socket;
 pthread_mutex_t cs;
@@ -48,6 +49,8 @@ void *broadcast_thread_func(void *arg) {
 }
 
 void init_server(int port) {
+    // [MỚI] Bỏ qua lỗi SIGPIPE để server không bị crash khi client ngắt kết nối đột ngột
+    signal(SIGPIPE, SIG_IGN);
     // 1. Khởi tạo Mutex (thay cho InitializeCriticalSection)
     if (pthread_mutex_init(&cs, NULL) != 0) {
         perror("Mutex init failed");

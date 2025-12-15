@@ -26,5 +26,6 @@ extern int room_count;
 int get_or_create_room(const char *room_name);
 void broadcast_room(Room *room, const char *msg);
 void remove_player(Room *room, int client); // Đổi SOCKET -> int
+void get_room_list_json(char *json);
 
 #endif

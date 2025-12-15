@@ -37,3 +37,26 @@ void remove_player(Room *room, int client) { // SOCKET -> int
         }
     }
 }
+
+void get_room_list_json(char *json) {
+    // Khởi tạo JSON
+    strcpy(json, "{\"type\":\"ROOM_LIST\",\"rooms\":[");
+    
+    int offset = strlen(json);
+    int has_room = 0;
+
+    for (int i = 0; i < room_count; i++) {
+        // Chỉ hiện phòng có người nhưng chưa đầy (hoặc hiện tất cả tùy bạn)
+        // Ở đây ta hiện tất cả phòng đang tồn tại
+        if (i > 0) {
+            offset += sprintf(json + offset, ",");
+        }
+        
+        // Format: {"name": "TênPhòng", "count": SốNgười}
+        offset += sprintf(json + offset, "{\"name\":\"%s\",\"count\":%d}", 
+                          rooms[i].name, rooms[i].player_count);
+        has_room = 1;
+    }
+
+    strcat(json, "]}");
+}

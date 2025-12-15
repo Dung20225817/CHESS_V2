@@ -15,52 +15,11 @@
 - **Node.js**: 14.x trở lên (bao gồm npm)
 - **Compiler C**: GCC hoặc MinGW (Windows)
 - **Hệ điều hành**: Windows, macOS, Linux
-
+- **Lưu ý**: Bạn nên dùng hệ điều hành linux, code được tôi ưu trên linux thay vì win đầu
 ---
 
-## 📌 1. Cài Đặt Python & Môi Trường Ảo
 
-### **Bước 1: Tạo môi trường ảo**
-```bash
-python -m venv myvenv
-```
-
-### **Bước 2: Kích hoạt môi trường ảo**
-
-**Windows:**
-```bash
-myvenv\Scripts\activate
-```
-
-### **Bước 3: Cài đặt thư viện Python**
-```bash
-pip install -r requirements.txt
-```
-
-> **💡 Lưu ý:** Đảm bảo file `requirements.txt` tồn tại trong thư mục gốc của dự án.
-
----
-
-## 📌 2. Cài Đặt Node.js & npm
-
-### **Bước 1: Tải Node.js**
-- Truy cập: [https://nodejs.org](https://nodejs.org)
-- Tải phiên bản **LTS** (khuyến nghị)
-
-### **Bước 2: Cài đặt**
-- **Windows:** Chạy file `.msi` và làm theo hướng dẫn
-
-### **Bước 3: Kiểm tra cài đặt**
-```bash
-node -v
-npm -v
-```
-
-> **✅ Kết quả mong đợi:** Hiển thị phiên bản Node.js và npm
-
----
-
-## 📌 3. Chạy Chương Trình
+## 📌 1. Chạy Chương Trình
 
 ### **Bước 1: Biên dịch & chạy C Server**
 ```bash
@@ -82,21 +41,14 @@ make
 
 ---
 
-### **Bước 2: Chạy Bridge Python**
+### **Bước 2: Biên dịch & chạy C Client**
 
 Mở **terminal mới** (giữ C Server đang chạy):
 
 ```bash
-python Bridge.py
+cd client
+make
 ```
-
-hoặc
-
-```bash
-py Bridge.py
-```
-
-> **⚠️ Lưu ý:** Đảm bảo môi trường ảo Python đã được kích hoạt.
 
 ---
 
@@ -105,21 +57,14 @@ py Bridge.py
 Mở **terminal thứ ba**:
 
 ```bash
-cd fe
+cd client
 ```
 
-**Lần chạy đầu tiên:**
+Mở **Chạy python**
+
 ```bash
-npm install
-npm start
+python3 main.py
 ```
-
-**Các lần sau:**
-```bash
-npm start
-```
-
-> **🌐 Truy cập ứng dụng:** Mở trình duyệt tại `http://localhost:3000`
 
 ---
 
@@ -128,8 +73,8 @@ npm start
 Hệ thống bao gồm 3 thành phần đã sẵn sàng:
 
 1. ✔️ **C Server** - Backend xử lý logic chính
-2. ✔️ **Python Bridge** - Cầu nối giữa C và Frontend
-3. ✔️ **React Frontend** - Giao diện người dùng
+2. ✔️ **C Client** - Gửi và nhận thông tin tới server
+3. ✔️ **GUI Python** - Giao diện người dùng
 
 ---
 
@@ -151,14 +96,6 @@ Hệ thống bao gồm 3 thành phần đã sẵn sàng:
 ### **Lỗi: Module không tìm thấy (Python)**
 - **Giải pháp:** 
   ```bash
-  pip install --upgrade -r requirements.txt
-  ```
-
-### **Lỗi: npm install thất bại**
-- **Giải pháp:**
-  ```bash
-  rm -rf node_modules package-lock.json
-  npm cache clean --force
-  npm install
+  sudo apt install ... (tên thư viện muốn tải)
   ```
 

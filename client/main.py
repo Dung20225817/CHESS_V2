@@ -26,6 +26,12 @@ class ChessApp:
         self.pending_requests = []  # Lời mời kết bạn
         self.challenges_list = []   # Lời thách đấu nhận được
 
+        # --- TIMER STATE (ĐÃ SỬA) ---
+        self.move_time_limit = 180  # 3 phút = 180 giây cho MỖI nước đi
+        self.current_move_time = self.move_time_limit 
+        self.timer_job = None
+        self.is_game_active = False
+
         # Challenge Polling State
         self.is_polling_challenge = False
         self.challenge_target_id = None
@@ -336,6 +342,87 @@ class ChessApp:
         elif idx == 1: self.req_get_challenges()
         elif idx == 3: self.req_get_requests()
 
+    # --- [MỚI] LOGIC ĐỒNG HỒ ---
+    def format_time(self, seconds):
+        """Chuyển đổi giây sang định dạng MM:SS"""
+        if seconds < 0: seconds = 0
+        mins = seconds // 60
+        secs = seconds % 60
+        return f"{mins:02d}:{secs:02d}"
+
+    def start_timer(self):
+        """Bắt đầu vòng lặp đếm ngược"""
+        if self.timer_job:
+            self.root.after_cancel(self.timer_job)
+        self.is_game_active = True
+        self.update_timer()
+
+    def stop_timer(self):
+        """Dừng đồng hồ"""
+        self.is_game_active = False
+        if self.timer_job:
+            self.root.after_cancel(self.timer_job)
+            self.timer_job = None
+
+    def update_timer(self):
+        """Hàm chạy mỗi giây để trừ thời gian nước đi hiện tại"""
+        if not self.is_game_active:
+            return
+
+        # 1. Trừ thời gian của nước đi hiện tại
+        self.current_move_time -= 1
+
+        # 2. Cập nhật UI
+        # Tính toán chuỗi hiển thị (VD: 02:59)
+        time_str = self.format_time(self.current_move_time)
+        full_time_str = self.format_time(self.move_time_limit) # 03:00
+
+        if self.turn_color == "white":
+            # Trắng đang đi -> Trừ giờ Trắng, Đen giữ nguyên
+            if hasattr(self, 'lbl_time_white'):
+                self.lbl_time_white.config(text=f"⚪ Trắng: {time_str}", fg="red" if self.current_move_time < 30 else "black")
+            if hasattr(self, 'lbl_time_black'):
+                self.lbl_time_black.config(text=f"⚫ Đen: {full_time_str}", fg="black") # Đen đầy cây
+                
+        elif self.turn_color == "black":
+            # Đen đang đi -> Trừ giờ Đen, Trắng giữ nguyên
+            if hasattr(self, 'lbl_time_black'):
+                self.lbl_time_black.config(text=f"⚫ Đen: {time_str}", fg="red" if self.current_move_time < 30 else "black")
+            if hasattr(self, 'lbl_time_white'):
+                self.lbl_time_white.config(text=f"⚪ Trắng: {full_time_str}", fg="black") # Trắng đầy cây
+
+        # 3. Kiểm tra hết giờ (Local check)
+        # Server sẽ xử lý việc ngắt kết nối, Client chỉ cần hiện số 00:00
+        if self.current_move_time <= 0:
+            self.current_move_time = 0
+            # Không tự stop timer, để nó chạy ở 00:00 chờ server xử lý GameOver
+        
+        # Lặp lại sau 1 giây
+        self.timer_job = self.root.after(1000, self.update_timer)
+
+    def handle_timeout(self):
+        self.stop_timer()
+        if self.time_white <= 0:
+            msg = "Hết giờ! Trắng thua."
+            winner = "black"
+        else:
+            msg = "Hết giờ! Đen thua."
+            winner = "white"
+        
+        self.append_move_log(f"--- {msg} ---")
+        messagebox.showinfo("Kết thúc", msg)
+    
+    def start_heartbeat(self):
+        """Gửi tin nhắn rỗng định kỳ để kiểm tra kết nối"""
+        if not self.is_game_active: return
+
+        # Gửi gói tin PING (Server có thể ko cần xử lý, chỉ cần gửi đi thành công là được)
+        self.net.send({"type": "PING"})
+
+        # Lặp lại sau 5 giây
+        self.root.after(5000, self.start_heartbeat)
+
+
     # ==========================================
     # 3. MÀN HÌNH GAME
     # ==========================================
@@ -347,6 +434,11 @@ class ChessApp:
             self.is_polling_challenge = False
 
         self.clear_container()
+        # Reset thời gian khi vào game mới
+        self.current_move_time = self.move_time_limit  # Reset về 180 giây
+        self.is_game_active = True
+        
+        self.start_heartbeat()
         
         # --- Cột bên phải (Thông tin & Log) ---
         info_panel = tk.Frame(self.container, width=250)
@@ -363,6 +455,24 @@ class ChessApp:
         
         self.lbl_turn = tk.Label(info_panel, text="Lượt: Trắng", font=("Arial", 12, "bold"))
         self.lbl_turn.pack(pady=(5, 10))
+
+        # === [MỚI] ĐỒNG HỒ ĐẾM NGƯỢC ===
+        # Tạo frame chứa đồng hồ
+        timer_frame = tk.Frame(info_panel, pady=10)
+        timer_frame.pack(fill="x")
+        
+        # Lấy chuỗi "03:00" để hiển thị mặc định
+        str_start = self.format_time(self.move_time_limit)
+
+        self.lbl_time_white = tk.Label(timer_frame, text=f"⚪ Trắng: {str_start}", 
+                                     font=("Arial", 12, "bold"), fg="black", bg="#f0f0f0", width=12)
+        self.lbl_time_white.pack(pady=2)
+        
+        self.lbl_time_black = tk.Label(timer_frame, text=f"⚫ Đen: {str_start}", 
+                                     font=("Arial", 12, "bold"), fg="black", bg="#f0f0f0", width=12)
+        self.lbl_time_black.pack(pady=2)
+        
+        self.start_timer()
         
         # === [ĐOẠN CẦN THÊM MỚI] ===
         tk.Label(info_panel, text="📜 Lịch sử đấu", font=("Arial", 10, "bold")).pack(anchor="w")
@@ -503,8 +613,11 @@ class ChessApp:
         self.net.send({"type": "move", "move": f"{from_sq}{to_sq}"})
 
     def do_leave_room(self):
+        self.stop_timer() # [MỚI] Dừng đồng hồ
         self.net.close()
         self.net.cb_ref = None
+        self.player_color = None
+        self.board_state = parse_fen("")
         self.show_login()
 
     def do_logout(self):
@@ -519,6 +632,21 @@ class ChessApp:
     def process_data(self, data):
         print(f"[RECV] {data}")
         msg_type = data.get("type")
+
+        # --- [MỚI] XỬ LÝ MẤT KẾT NỐI ---
+        if msg_type == "DISCONNECT":
+            # Dừng timer nếu đang chơi
+            self.stop_timer()
+            
+            # Hiển thị thông báo
+            messagebox.showerror("Lỗi kết nối", "Mất kết nối tới Server!\n(Server đã tắt hoặc đường truyền bị ngắt)")
+            
+            # Reset trạng thái và về màn hình đăng nhập
+            self.net.cb_ref = None # Hủy callback để tránh lỗi
+            self.player_color = None
+            self.board_state = parse_fen("")
+            self.show_login()
+            return # Dừng xử lý
 
         # AUTH
         if msg_type in ["LOGIN", "REGISTER"]:
@@ -600,6 +728,9 @@ class ChessApp:
         elif msg_type == "move_notify":
             move_str = data.get("move")
             next_turn = data.get("turn")
+
+            # [THÊM VÀO ĐÂY] Reset đồng hồ về 3 phút ngay khi nhận thông báo nước đi
+            self.current_move_time = self.move_time_limit
             
             # Logic hiển thị log
             # Nếu lượt đi tiếp theo LÀ của mình -> Tức là đối thủ vừa đi
@@ -615,6 +746,9 @@ class ChessApp:
         elif msg_type == "state":
             fen = data.get("fen")
             turn = data.get("turn")
+            # [THÊM VÀO ĐÂY] Reset nếu lượt thay đổi (đề phòng gói move_notify bị lạc)
+            if turn != self.turn_color:
+                self.current_move_time = self.move_time_limit
             self.board_state = parse_fen(fen)
             self.turn_color = turn
             if hasattr(self, 'lbl_turn'):
@@ -625,6 +759,7 @@ class ChessApp:
                 self.board_gui.update_board(self.board_state, self.player_color, is_my_turn)
 
         elif msg_type == "gameOver":
+            self.stop_timer()
             winner = data.get("winner")
             
             # [MỚI] Xử lý trường hợp đối thủ thoát

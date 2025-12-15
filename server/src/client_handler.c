@@ -73,8 +73,8 @@ void *client_thread(void *arg)
                 {
                     char fail[] = "{\"type\":\"REGISTER\",\"success\":false}\n";
                     send(client, fail, strlen(fail), 0);
-                    close(client);
-                    return NULL;
+                    // close(client);
+                    // return NULL;
                 }
                 continue;
             }
@@ -376,7 +376,7 @@ void *client_thread(void *arg)
                     
                     // [MỚI] 1. Cấu hình Timeout 60 giây cho Socket này
                     struct timeval tv;
-                    tv.tv_sec = 60;  // 60 Giây timeout
+                    tv.tv_sec = 180;  // 60 Giây timeout
                     tv.tv_usec = 0;
                     setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
 

@@ -15,7 +15,7 @@
 - **Node.js**: 14.x trở lên (bao gồm npm)
 - **Compiler C**: GCC hoặc MinGW (Windows)
 - **Hệ điều hành**: Windows, macOS, Linux
-- **Lưu ý**: Bạn nên dùng hệ điều hành linux, code được tôi ưu trên linux thay vì win đầu
+- **Lưu ý**: Bạn nên dùng hệ điều hành linux, code được tôi ưu trên linux thay vì window
 ---
 
 
